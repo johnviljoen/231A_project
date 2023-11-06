@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 
 setup(name='231A_project',
     version='0.0.1',
-    url='https://gitlab.pnnl.gov/dadaist/dpc_safety_filter/',
+    url='https://github.com/johnviljoen/231A_project/',
     author='John Viljoen',
     author_email='johnviljoen2@gmail.com',
     install_requires=[
