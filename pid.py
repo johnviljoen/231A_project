@@ -5,95 +5,93 @@ COMPLETE - asides from the velocity saturation
 """
 
 import torch
-
 import utils.pytorch as ptu
-
-from dpc_sf.dynamics.eom_pt import state_dot_nm, state_dot_pt
-from dpc_sf.dynamics.params import params as quad_params
-from dpc_sf.control.trajectory.trajectory import waypoint_reference
 
 rad2deg = 180.0/torch.pi
 deg2rad = torch.pi/180.0
 
-ctrl_params = {}
+def get_ctrl_params():
 
-# Set PID Gains and Max Values
-# ---------------------------
+    ctrl_params = {}
 
-# Position P gains
-ctrl_params["Py"]    = 1.0
-ctrl_params["Px"]    = ctrl_params["Py"]
-ctrl_params["Pz"]    = 1.0
+    # Set PID Gains and Max Values
+    # ---------------------------
 
-ctrl_params["pos_P_gain"] = ptu.tensor([ctrl_params["Px"], ctrl_params["Py"], ctrl_params["Pz"]])
+    # Position P gains
+    ctrl_params["Py"]    = 1.0
+    ctrl_params["Px"]    = ctrl_params["Py"]
+    ctrl_params["Pz"]    = 1.0
 
-# Velocity P-D gains
-ctrl_params["Pxdot"] = 5.0
-ctrl_params["Dxdot"] = 0.5
-ctrl_params["Ixdot"] = 5.0
+    ctrl_params["pos_P_gain"] = ptu.tensor([ctrl_params["Px"], ctrl_params["Py"], ctrl_params["Pz"]])
 
-ctrl_params["Pydot"] = ctrl_params["Pxdot"]
-ctrl_params["Dydot"] = ctrl_params["Dxdot"]
-ctrl_params["Iydot"] = ctrl_params["Ixdot"]
+    # Velocity P-D gains
+    ctrl_params["Pxdot"] = 5.0
+    ctrl_params["Dxdot"] = 0.5
+    ctrl_params["Ixdot"] = 5.0
 
-ctrl_params["Pzdot"] = 4.0
-ctrl_params["Dzdot"] = 0.5
-ctrl_params["Izdot"] = 5.0
+    ctrl_params["Pydot"] = ctrl_params["Pxdot"]
+    ctrl_params["Dydot"] = ctrl_params["Dxdot"]
+    ctrl_params["Iydot"] = ctrl_params["Ixdot"]
 
-ctrl_params["vel_P_gain"] = ptu.tensor([ctrl_params["Pxdot"], ctrl_params["Pydot"], ctrl_params["Pzdot"]])
-ctrl_params["vel_D_gain"] = ptu.tensor([ctrl_params["Dxdot"], ctrl_params["Dydot"], ctrl_params["Dzdot"]])
-ctrl_params["vel_I_gain"] = ptu.tensor([ctrl_params["Ixdot"], ctrl_params["Iydot"], ctrl_params["Izdot"]])
+    ctrl_params["Pzdot"] = 4.0
+    ctrl_params["Dzdot"] = 0.5
+    ctrl_params["Izdot"] = 5.0
 
-# Attitude P gains
-ctrl_params["Pphi"] = 8.0
-ctrl_params["Ptheta"] = ctrl_params["Pphi"]
-ctrl_params["Ppsi"] = 1.5
-ctrl_params["PpsiStrong"] = 8
+    ctrl_params["vel_P_gain"] = ptu.tensor([ctrl_params["Pxdot"], ctrl_params["Pydot"], ctrl_params["Pzdot"]])
+    ctrl_params["vel_D_gain"] = ptu.tensor([ctrl_params["Dxdot"], ctrl_params["Dydot"], ctrl_params["Dzdot"]])
+    ctrl_params["vel_I_gain"] = ptu.tensor([ctrl_params["Ixdot"], ctrl_params["Iydot"], ctrl_params["Izdot"]])
 
-ctrl_params["att_P_gain"] = ptu.tensor([ctrl_params["Pphi"], ctrl_params["Ptheta"], ctrl_params["Ppsi"]])
+    # Attitude P gains
+    ctrl_params["Pphi"] = 8.0
+    ctrl_params["Ptheta"] = ctrl_params["Pphi"]
+    ctrl_params["Ppsi"] = 1.5
+    ctrl_params["PpsiStrong"] = 8
 
-# Rate P-D gains
-ctrl_params["Pp"] = 1.5
-ctrl_params["Dp"] = 0.04
-ctrl_params["Pq"] = ctrl_params["Pp"]
-ctrl_params["Dq"] = ctrl_params["Dp"] 
-ctrl_params["Pr"] = 1.0
-ctrl_params["Dr"] = 0.1
+    ctrl_params["att_P_gain"] = ptu.tensor([ctrl_params["Pphi"], ctrl_params["Ptheta"], ctrl_params["Ppsi"]])
 
-ctrl_params["rate_P_gain"] = ptu.tensor([ctrl_params["Pp"], ctrl_params["Pq"], ctrl_params["Pr"]])
-ctrl_params["rate_D_gain"] = ptu.tensor([ctrl_params["Dp"], ctrl_params["Dq"], ctrl_params["Dr"]])
+    # Rate P-D gains
+    ctrl_params["Pp"] = 1.5
+    ctrl_params["Dp"] = 0.04
+    ctrl_params["Pq"] = ctrl_params["Pp"]
+    ctrl_params["Dq"] = ctrl_params["Dp"] 
+    ctrl_params["Pr"] = 1.0
+    ctrl_params["Dr"] = 0.1
 
-# Max Velocities
-ctrl_params["uMax"] = 5.0
-ctrl_params["vMax"] = 5.0
-ctrl_params["wMax"] = 5.0
+    ctrl_params["rate_P_gain"] = ptu.tensor([ctrl_params["Pp"], ctrl_params["Pq"], ctrl_params["Pr"]])
+    ctrl_params["rate_D_gain"] = ptu.tensor([ctrl_params["Dp"], ctrl_params["Dq"], ctrl_params["Dr"]])
 
-ctrl_params["velMax"] = ptu.tensor([ctrl_params["uMax"], ctrl_params["vMax"], ctrl_params["wMax"]])
-ctrl_params["velMaxAll"] = 5.0
+    # Max Velocities
+    ctrl_params["uMax"] = 5.0
+    ctrl_params["vMax"] = 5.0
+    ctrl_params["wMax"] = 5.0
 
-ctrl_params["saturateVel_separetely"] = False
+    ctrl_params["velMax"] = ptu.tensor([ctrl_params["uMax"], ctrl_params["vMax"], ctrl_params["wMax"]])
+    ctrl_params["velMaxAll"] = 5.0
 
-# Max tilt
-ctrl_params["tiltMax"] = 50.0*deg2rad
+    ctrl_params["saturateVel_separetely"] = False
 
-# Max Rate
-ctrl_params["pMax"] = 200.0*deg2rad
-ctrl_params["qMax"] = 200.0*deg2rad
-ctrl_params["rMax"] = 150.0*deg2rad
+    # Max tilt
+    ctrl_params["tiltMax"] = 50.0*deg2rad
 
-ctrl_params["rateMax"] = ptu.tensor([ctrl_params["pMax"], ctrl_params["qMax"], ctrl_params["rMax"]])
-roll_pitch_gain = 0.5*(ctrl_params["att_P_gain"][0] + ctrl_params["att_P_gain"][1])
+    # Max Rate
+    ctrl_params["pMax"] = 200.0*deg2rad
+    ctrl_params["qMax"] = 200.0*deg2rad
+    ctrl_params["rMax"] = 150.0*deg2rad
 
-# assumed yaw_w to be 1 to allow for much better gradients
-ctrl_params["yaw_w"] = torch.clip(ctrl_params["att_P_gain"][2]/roll_pitch_gain, 0.0, 1.0)
-ctrl_params["att_P_gain"][2] = roll_pitch_gain
+    ctrl_params["rateMax"] = ptu.tensor([ctrl_params["pMax"], ctrl_params["qMax"], ctrl_params["rMax"]])
+    roll_pitch_gain = 0.5*(ctrl_params["att_P_gain"][0] + ctrl_params["att_P_gain"][1])
 
-# yaw rate feedforward term and clip it
-ctrl_params["yawFF"] = ptu.tensor(0.0)
+    # assumed yaw_w to be 1 to allow for much better gradients
+    ctrl_params["yaw_w"] = torch.clip(ctrl_params["att_P_gain"][2]/roll_pitch_gain, 0.0, 1.0)
+    ctrl_params["att_P_gain"][2] = roll_pitch_gain
 
-# add the calculated rateMax term clip to yawFF
-ctrl_params["yawFF"] = torch.clip(ctrl_params["yawFF"], -ctrl_params["rateMax"][2], ctrl_params["rateMax"][2])
+    # yaw rate feedforward term and clip it
+    ctrl_params["yawFF"] = ptu.tensor(0.0)
 
+    # add the calculated rateMax term clip to yawFF
+    ctrl_params["yawFF"] = torch.clip(ctrl_params["yawFF"], -ctrl_params["rateMax"][2], ctrl_params["rateMax"][2])
+
+    return ctrl_params
 
 class PID(torch.nn.Module):
 
@@ -476,12 +474,13 @@ class PID(torch.nn.Module):
     
 if __name__ == "__main__":
 
-    from dpc_sf.dynamics.eom_pt import state_dot_nm
     from tqdm import tqdm
     import numpy as np
-    from dpc_sf.utils.animation import Animator
+    from utils.quad import Animator
     import copy
     import matplotlib.pyplot as plt
+    from dynamics import state_dot, get_quad_params
+
 
     class Visualiser():
         def __init__(self, reference=waypoint_reference('wp_p2p', average_vel=1.6)) -> None:
@@ -513,7 +512,7 @@ if __name__ == "__main__":
 
     print("testing the classical control system from the github repo")
     Ts = 0.01
-    ctrl = XYZ_Vel(Ts=Ts, input="xyz_thr")
+    ctrl = PID(Ts=Ts, input="xyz_thr")
     R = waypoint_reference('wp_p2p', average_vel=1.6)
     state = quad_params["default_init_state_pt"][0:13]
     batch_size = 100
@@ -548,7 +547,7 @@ if __name__ == "__main__":
 
             vis.save(x[0,:],u[0,:],r,t)
 
-        x += state_dot_nm(x, u, params=quad_params, include_actuators=False) * Ts
+        x += state_dot.neuromancer(x, u, params=quad_params, include_actuators=False) * Ts
         print(f"x: {x[0,:]}")
 
         x[0,2] *= -1

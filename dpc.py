@@ -8,8 +8,7 @@ from neuromancer.dynamics import ode, integrators
 import utils.pytorch as ptu
 import utils.callback
 
-train = True
-run = True
+
 
 class DatasetGenerator:
     def __init__(
@@ -33,6 +32,7 @@ class DatasetGenerator:
         self.x_range = 3.0
         self.r_range = 3.0
         self.cyl_range = 3.0
+        self.nx = 6
 
     # Obstacle Avoidance Methods:
     # ---------------------------
@@ -229,7 +229,6 @@ class DatasetGenerator:
         return {
             'X': X,
             'R': R,
-            'Idx': ptu.create_zeros([self.batch_size,1,1]), # start idx
         }
     
     def get_sinusoidal_traj_dataset(self, average_velocity):
@@ -271,7 +270,6 @@ class DatasetGenerator:
             'X': X,
             'R': R,
             'P': P,
-            'Idx': ptu.create_zeros([self.batch_size,1,1]), # start idx
         }
     
     # Shared Methods
@@ -553,7 +551,7 @@ def train_wp_p2p(    # recommendations:
         if "callable." in key:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
-    torch.save(policy_state_dict, policy_save_path + f"policy.pth")
+    torch.save(policy_state_dict, policy_save_path + f"wp_p2p_policy.pth")
 
 def train_wp_traj(    # recommendations:
     iterations,      # 2
@@ -568,8 +566,6 @@ def train_wp_traj(    # recommendations:
     ):
 
     # unchanging parameters:
-    radius = 0.5
-    Q_con = 1_000_000
     R = 0.1
     Qpos = 5.00
     Qvel = 5.00
@@ -617,7 +613,7 @@ def train_wp_traj(    # recommendations:
     node_list.append(dynamics_node)
 
     print(f'node list used in cl_system: {node_list}')
-    cl_system = nm.ssytem.System(node_list)
+    cl_system = nm.system.System(node_list)
 
     # Dataset Generation Class
     # ------------------------
@@ -712,7 +708,7 @@ def train_wp_traj(    # recommendations:
         if "callable." in key:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
-    torch.save(policy_state_dict, policy_save_path + f"policy.pth")
+    torch.save(policy_state_dict, policy_save_path + f"wp_traj_policy.pth")
 
 def train_fig8(    # recommendations:
     iterations,      # 2
@@ -727,8 +723,6 @@ def train_fig8(    # recommendations:
     ):
 
     # unchanging parameters:
-    radius = 0.5
-    Q_con = 1_000_000
     R = 0.1
     Qpos = 5.00
     Qvel = 5.00
@@ -876,12 +870,15 @@ def train_fig8(    # recommendations:
         if "callable." in key:
             new_key = key.split("nodes.0.nodes.1.")[-1]
             policy_state_dict[new_key] = value
-    torch.save(policy_state_dict, policy_save_path + f"policy.pth")
+    torch.save(policy_state_dict, policy_save_path + f"fig8_policy.pth")
+
 
 
 if __name__ == "__main__":
 
     # best setup below for T1 desktop
+    train = True
+    run = True
 
     # torch.autograd.set_detect_anomaly(True)
     torch.manual_seed(0)
@@ -889,7 +886,8 @@ if __name__ == "__main__":
     ptu.init_gpu(use_gpu=False)
 
     import time
-
+    train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
+    train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
     start_time = time.time()
     train_wp_p2p(iterations=2, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
     end_time = time.time()
