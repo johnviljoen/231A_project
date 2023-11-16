@@ -240,12 +240,7 @@ if __name__ == "__main__":
     import numpy as np
     from tqdm import tqdm
     import matplotlib.pyplot as plt
-
-    from dpc_sf.dynamics.mj import QuadcopterMJ
-    # from dpc_sf.control.mpc.mpc import MPC_Point_Ref, MPC_Traj_Ref
-    from dpc_sf.control.trajectory.trajectory import waypoint_reference
-    from dpc_sf.control.trajectory.trajectory import equation_reference
-    from dpc_sf.dynamics.eom_ca import QuadcopterCA
+    import reference
 
     Ts = 0.01
     Tf_hzn = 3.0
@@ -261,7 +256,7 @@ if __name__ == "__main__":
     dts_init = [dt_1 + i * d for i in range(N)]
 
     # reference = waypoint_reference('wp_p2p', average_vel=0.1, set_vel_zero=False)
-    reference = waypoint_reference('wp_traj', average_vel=1.0, set_vel_zero=False)
+    ref = reference.waypoint('wp_traj', average_vel=1.0, set_vel_zero=False)
 
 
     state = quad_params["default_init_state_np"]
@@ -269,7 +264,7 @@ if __name__ == "__main__":
 
     quad = QuadcopterMJ(
         state=state,
-        reference=reference,
+        reference=ref,
         params=quad_params,
         Ts=Ts,
         Ti=Ti,
@@ -298,7 +293,7 @@ if __name__ == "__main__":
             return np.array(times)  # Exclude the starting time
 
         times = compute_times(t, dts_init)
-        r = np.vstack([reference(time) for time in times]).T
+        r = np.vstack([ref(time) for time in times]).T
         cmd = ctrl(quad.state, r)
         quad.step(cmd)
 
