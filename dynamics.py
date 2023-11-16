@@ -2,6 +2,7 @@ import casadi as ca
 import numpy as np
 import torch
 import utils.pytorch as ptu
+import utils.quad
 
 from typing import Dict
 
@@ -18,18 +19,18 @@ def get_quad_params():
     params["dxm"]  = 0.16      # arm length (m)
     params["dym"]  = 0.16      # arm length (m)
     params["dzm"]  = 0.05      # motor height (m)
-    params["IB"]   = ptu.from_numpy(np.array(
+    params["IB"]   = ptu.tensor(
                         [[0.0123, 0,      0     ],
                         [0,      0.0123, 0     ],
                         [0,      0,      0.0224]]
-                    )) # Inertial tensor (kg*m^2)
+                    ) # Inertial tensor (kg*m^2)
     params["invI"] = torch.linalg.inv(params["IB"])
     params["IRzz"] = 2.7e-5   # Rotor moment of inertia (kg*m^2)
 
     params["Cd"]         = 0.1
     params["kTh"]        = 1.076e-5 # thrust coeff (N/(rad/s)^2)  (1.18e-7 N/RPM^2)
     params["kTo"]        = 1.632e-7 # torque coeff (Nm/(rad/s)^2)  (1.79e-9 Nm/RPM^2)
-    params["mixerFM"]    = utils.makeMixerFM(params) # Make mixer that calculated Thrust (F) and moments (M) as a function on motor speeds
+    params["mixerFM"]    = utils.quad.makeMixerFM.pytorch(params) # Make mixer that calculated Thrust (F) and moments (M) as a function on motor speeds
     params["mixerFMinv"] = torch.linalg.inv(params["mixerFM"])
     params["minThr"]     = 0.1*4    # Minimum total thrust
     params["maxThr"]     = 9.18*4   # Maximum total thrust
@@ -218,6 +219,8 @@ def get_quad_params():
     params["w_var"] = np.array([50000]*4)
 
     params["useIntegral"] = True
+
+    return params
 
 class state_dot:
 
@@ -681,7 +684,6 @@ class state_dot:
         ActuatorsDot = cmd/params["IRzz"]
         return torch.hstack([DynamicsDot.T, ActuatorsDot])
 
-
 class linmod:
 
     @staticmethod
@@ -712,7 +714,7 @@ class linmod:
         wM4 = state[16]
 
         wMotor = torch.stack([wM1, wM2, wM3, wM4])
-        wMotor = torch.clip(wMotor, self.params["minWmotor"], self.params["maxWmotor"])
+        wMotor = torch.clip(wMotor, params["minWmotor"], params["maxWmotor"])
 
         # Stochastic Terms in Expectation
         # ---------------------------
@@ -743,39 +745,39 @@ class linmod:
                         -2
                         * q2
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         -2
                         * q3
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         -2
                         * q0
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         -2
                         * q1
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                     ]
                 ),
                 torch.stack(
@@ -783,39 +785,39 @@ class linmod:
                         2
                         * q1
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         2
                         * q0
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         -2
                         * q3
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         -2
                         * q2
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                     ]
                 ),
                 torch.stack(
@@ -823,39 +825,39 @@ class linmod:
                         -2
                         * q0
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         2
                         * q1
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         2
                         * q2
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         -2
                         * q3
                         * (
-                            self.params["kTh"] * wM1 ** 2
-                            + self.params["kTh"] * wM2 ** 2
-                            + self.params["kTh"] * wM3 ** 2
-                            + self.params["kTh"] * wM4 ** 2
+                            params["kTh"] * wM1 ** 2
+                            + params["kTh"] * wM2 ** 2
+                            + params["kTh"] * wM3 ** 2
+                            + params["kTh"] * wM4 ** 2
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                     ]
                 ),
                 torch.stack([_, _, _, _]),
@@ -881,11 +883,11 @@ class linmod:
                 torch.stack(
                     [
                         (
-                            self.params["Cd"]
-                            * (-2 * velW * cos(qW1) * cos(qW2) + 2 * xdot)
-                            * sign(velW * cos(qW1) * cos(qW2) - xdot)
+                            params["Cd"]
+                            * (-2 * velW * torch.cos(qW1) * torch.cos(qW2) + 2 * xdot)
+                            * torch.sign(velW * torch.cos(qW1) * torch.cos(qW2) - xdot)
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         _,
                         _,
                     ]
@@ -894,11 +896,11 @@ class linmod:
                     [
                         _,
                         (
-                            self.params["Cd"]
-                            * (-2 * velW * sin(qW1) * cos(qW2) + 2 * ydot)
-                            * sign(velW * sin(qW1) * cos(qW2) - ydot)
+                            params["Cd"]
+                            * (-2 * velW * torch.sin(qW1) * torch.cos(qW2) + 2 * ydot)
+                            * torch.sign(velW * torch.sin(qW1) * torch.cos(qW2) - ydot)
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                         _,
                     ]
                 ),
@@ -907,11 +909,11 @@ class linmod:
                         _,
                         _,
                         (
-                            -self.params["Cd"]
-                            * (2 * velW * sin(qW2) + 2 * zdot)
-                            * sign(velW * sin(qW2) + zdot)
+                            -params["Cd"]
+                            * (2 * velW * torch.sin(qW2) + 2 * zdot)
+                            * torch.sign(velW * torch.sin(qW2) + zdot)
                         )
-                        / self.params["mB"],
+                        / params["mB"],
                     ]
                 ),
                 torch.stack([_, _, _]),
@@ -940,18 +942,18 @@ class linmod:
                 torch.stack(
                     [
                         _,
-                        (-self.params["IRzz"] * (wM1 - wM2 + wM3 - wM4) + r * (self.params["IB"][1,1] - self.params["IB"][2,2])) / self.params["IB"][0,0],
-                        q * (self.params["IB"][1,1] - self.params["IB"][2,2]) / self.params["IB"][0,0],
+                        (-params["IRzz"] * (wM1 - wM2 + wM3 - wM4) + r * (params["IB"][1,1] - params["IB"][2,2])) / params["IB"][0,0],
+                        q * (params["IB"][1,1] - params["IB"][2,2]) / params["IB"][0,0],
                     ]
                 ),
                 torch.stack(
                     [
-                        (self.params["IRzz"] * (wM1 - wM2 + wM3 - wM4) + r * (-self.params["IB"][0,0] + self.params["IB"][2,2])) / self.params["IB"][1,1],
+                        (params["IRzz"] * (wM1 - wM2 + wM3 - wM4) + r * (-params["IB"][0,0] + params["IB"][2,2])) / params["IB"][1,1],
                         _,
-                        p * (-self.params["IB"][0,0] + self.params["IB"][2,2]) / self.params["IB"][1,1],
+                        p * (-params["IB"][0,0] + params["IB"][2,2]) / params["IB"][1,1],
                     ]
                 ),
-                torch.stack([q * (self.params["IB"][0,0] - self.params["IB"][1,1]) / self.params["IB"][2,2], p * (self.params["IB"][0,0] - self.params["IB"][1,1]) / self.params["IB"][2,2], _]),
+                torch.stack([q * (params["IB"][0,0] - params["IB"][1,1]) / params["IB"][2,2], p * (params["IB"][0,0] - params["IB"][1,1]) / params["IB"][2,2], _]),
                 torch.stack([_, _, _]),
                 torch.stack([_, _, _]),
                 torch.stack([_, _, _]),
@@ -971,50 +973,50 @@ class linmod:
                 torch.stack([_, _, _, _]),
                 torch.stack(
                     [
-                        -2 * self.params["kTh"] * wM1 * (2 * q0 * q2 + 2 * q1 * q3) / self.params["mB"],
-                        -2 * self.params["kTh"] * wM2 * (2 * q0 * q2 + 2 * q1 * q3) / self.params["mB"],
-                        -2 * self.params["kTh"] * wM3 * (2 * q0 * q2 + 2 * q1 * q3) / self.params["mB"],
-                        -2 * self.params["kTh"] * wM4 * (2 * q0 * q2 + 2 * q1 * q3) / self.params["mB"],
+                        -2 * params["kTh"] * wM1 * (2 * q0 * q2 + 2 * q1 * q3) / params["mB"],
+                        -2 * params["kTh"] * wM2 * (2 * q0 * q2 + 2 * q1 * q3) / params["mB"],
+                        -2 * params["kTh"] * wM3 * (2 * q0 * q2 + 2 * q1 * q3) / params["mB"],
+                        -2 * params["kTh"] * wM4 * (2 * q0 * q2 + 2 * q1 * q3) / params["mB"],
                     ]
                 ),
                 torch.stack(
                     [
-                        2 * self.params["kTh"] * wM1 * (2 * q0 * q1 - 2 * q2 * q3) / self.params["mB"],
-                        2 * self.params["kTh"] * wM2 * (2 * q0 * q1 - 2 * q2 * q3) / self.params["mB"],
-                        2 * self.params["kTh"] * wM3 * (2 * q0 * q1 - 2 * q2 * q3) / self.params["mB"],
-                        2 * self.params["kTh"] * wM4 * (2 * q0 * q1 - 2 * q2 * q3) / self.params["mB"],
+                        2 * params["kTh"] * wM1 * (2 * q0 * q1 - 2 * q2 * q3) / params["mB"],
+                        2 * params["kTh"] * wM2 * (2 * q0 * q1 - 2 * q2 * q3) / params["mB"],
+                        2 * params["kTh"] * wM3 * (2 * q0 * q1 - 2 * q2 * q3) / params["mB"],
+                        2 * params["kTh"] * wM4 * (2 * q0 * q1 - 2 * q2 * q3) / params["mB"],
                     ]
                 ),
                 torch.stack(
                     [
-                        -2 * self.params["kTh"] * wM1 * (q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2) / self.params["mB"],
-                        -2 * self.params["kTh"] * wM2 * (q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2) / self.params["mB"],
-                        -2 * self.params["kTh"] * wM3 * (q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2) / self.params["mB"],
-                        -2 * self.params["kTh"] * wM4 * (q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2) / self.params["mB"],
+                        -2 * params["kTh"] * wM1 * (q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2) / params["mB"],
+                        -2 * params["kTh"] * wM2 * (q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2) / params["mB"],
+                        -2 * params["kTh"] * wM3 * (q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2) / params["mB"],
+                        -2 * params["kTh"] * wM4 * (q0 ** 2 - q1 ** 2 - q2 ** 2 + q3 ** 2) / params["mB"],
                     ]
                 ),
                 torch.stack(
                     [
-                        (-self.params["IRzz"] * q + 2 * self.params["dym"] * self.params["kTh"] * wM1) / self.params["IB"][0,0],
-                        (self.params["IRzz"] * q - 2 * self.params["dym"] * self.params["kTh"] * wM2) / self.params["IB"][0,0],
-                        (-self.params["IRzz"] * q - 2 * self.params["dym"] * self.params["kTh"] * wM3) / self.params["IB"][0,0],
-                        (self.params["IRzz"] * q + 2 * self.params["dym"] * self.params["kTh"] * wM4) / self.params["IB"][0,0],
+                        (-params["IRzz"] * q + 2 * params["dym"] * params["kTh"] * wM1) / params["IB"][0,0],
+                        (params["IRzz"] * q - 2 * params["dym"] * params["kTh"] * wM2) / params["IB"][0,0],
+                        (-params["IRzz"] * q - 2 * params["dym"] * params["kTh"] * wM3) / params["IB"][0,0],
+                        (params["IRzz"] * q + 2 * params["dym"] * params["kTh"] * wM4) / params["IB"][0,0],
                     ]
                 ),
                 torch.stack(
                     [
-                        (self.params["IRzz"] * p + 2 * self.params["dxm"] * self.params["kTh"] * wM1) / self.params["IB"][1,1],
-                        (-self.params["IRzz"] * p + 2 * self.params["dxm"] * self.params["kTh"] * wM2) / self.params["IB"][1,1],
-                        (self.params["IRzz"] * p - 2 * self.params["dxm"] * self.params["kTh"] * wM3) / self.params["IB"][1,1],
-                        (-self.params["IRzz"] * p - 2 * self.params["dxm"] * self.params["kTh"] * wM4) / self.params["IB"][1,1],
+                        (params["IRzz"] * p + 2 * params["dxm"] * params["kTh"] * wM1) / params["IB"][1,1],
+                        (-params["IRzz"] * p + 2 * params["dxm"] * params["kTh"] * wM2) / params["IB"][1,1],
+                        (params["IRzz"] * p - 2 * params["dxm"] * params["kTh"] * wM3) / params["IB"][1,1],
+                        (-params["IRzz"] * p - 2 * params["dxm"] * params["kTh"] * wM4) / params["IB"][1,1],
                     ]
                 ),
                 torch.stack(
                     [
-                        -2 * self.params["kTo"] * wM1 / self.params["IB"][2,2],
-                        2 * self.params["kTo"] * wM2 / self.params["IB"][2,2],
-                        -2 * self.params["kTo"] * wM3 / self.params["IB"][2,2],
-                        2 * self.params["kTo"] * wM4 / self.params["IB"][2,2],
+                        -2 * params["kTo"] * wM1 / params["IB"][2,2],
+                        2 * params["kTo"] * wM2 / params["IB"][2,2],
+                        -2 * params["kTo"] * wM3 / params["IB"][2,2],
+                        2 * params["kTo"] * wM4 / params["IB"][2,2],
                     ]
                 ),
                 torch.stack([_, _, _, _]),
@@ -1045,11 +1047,41 @@ class linmod:
                 torch.stack([_, _, _, _]),
                 torch.stack([_, _, _, _]),
                 torch.stack([_, _, _, _]),
-                torch.stack([_ + 1 / self.params["IRzz"], _, _, _]),
-                torch.stack([_, _ + 1 / self.params["IRzz"], _, _]),
-                torch.stack([_, _, _ + 1 / self.params["IRzz"], _]),
-                torch.stack([_, _, _, _ + 1 / self.params["IRzz"]]),
+                torch.stack([_ + 1 / params["IRzz"], _, _, _]),
+                torch.stack([_, _ + 1 / params["IRzz"], _, _]),
+                torch.stack([_, _, _ + 1 / params["IRzz"], _]),
+                torch.stack([_, _, _, _ + 1 / params["IRzz"]]),
             ]
         )
 
         return A, B
+
+if __name__ == "__main__":
+
+    # an example simulation and animation 
+    from utils.integrate import euler, RK4
+    from utils.quad import Animator
+
+    ptu.init_dtype()
+    ptu.init_gpu()
+
+    quad_params = get_quad_params()
+    state = quad_params["default_init_state_pt"]
+    input = ptu.tensor([0.0001,0.0,0.0,0.0])
+
+    Ti, Tf, Ts = 0.0, 3.0, 0.1
+    memory = {'state': [ptu.to_numpy(state)], 'input': [ptu.to_numpy(input)]}
+    times = np.arange(Ti, Tf, Ts)
+    for t in times:
+        state = RK4.time_invariant.pytorch(state_dot.pytorch_vectorized, state, input, Ts, quad_params)
+
+        memory['state'].append(ptu.to_numpy(state))
+        memory['input'].append(ptu.to_numpy(input))
+
+    memory['state'] = np.vstack(memory['state'])
+    memory['input'] = np.vstack(memory['input'])
+
+    animator = Animator(memory['state'], times, memory['state'], max_frames=10, save_path='data')
+    animator.animate()
+
+    print('fin')

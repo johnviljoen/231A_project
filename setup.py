@@ -12,7 +12,8 @@ setup(name='231A_project',
     author_email='johnviljoen2@gmail.com',
     install_requires=[
         'casadi',
-        'torch'
+        'torch',
+        'matplotlib',
     ],
     packages=find_packages(
         include=[

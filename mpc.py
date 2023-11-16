@@ -17,7 +17,8 @@ class MPC:
             Ts_0,                       # Timestep of Simulation
             Tf_hzn,                     # Final time prediction horizon reaches
             dts_init,                   # initial variable timestep
-            quad,                       # CasADI dynamics of quadcopter
+            state_dot,                       # CasADI dynamics of quadcopter
+            quad_params,
             integrator_type = "euler",  # "euler", "RK4"
             obstacle_opts = {           # If obstacle_opts not None, define cylinder
                 'r': 0.5,
@@ -30,9 +31,9 @@ class MPC:
         self.Ts = Ts_0
         self.Tf_hzn = Tf_hzn
         self.dts_init = dts_init
-        self.dynamics = quad.state_dot
-        self.state_ub = quad.params["state_ub"]
-        self.state_lb = quad.params["state_lb"]
+        self.dynamics = state_dot
+        self.state_ub = quad_params["state_ub"]
+        self.state_lb = quad_params["state_lb"]
         self.integrator_type = integrator_type
         self.obstacle = obstacle_opts   
 
