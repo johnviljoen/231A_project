@@ -1,4 +1,5 @@
 casadi
-torch
+neuromancer
 matplotlib
 tqdm
+imageio

@@ -1,5 +1,5 @@
 """
-generate a python env with version 3.9, and pip install -e . on this and u
+generate a python env with version 3.10, and pip install -e . on this and u
 should be good to go.
 """
 
@@ -12,9 +12,10 @@ setup(name='231A_project',
     author_email='johnviljoen2@gmail.com',
     install_requires=[
         'casadi',
-        'torch',
+        'neuromancer',
         'matplotlib',
-        'tqdm',
+        'tqdm',         # just for pretty loops in a couple places
+        'imageio',      # just for DPC callback animations
     ],
     packages=find_packages(
         include=[

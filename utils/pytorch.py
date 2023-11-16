@@ -29,5 +29,5 @@ def to_numpy(tensor):
 def tensor(list):
     return torch.tensor(list).type(dtype).to(device)
 
-def create_zeros(shape):
+def zeros(shape):
     return torch.zeros(shape).type(dtype).to(device)
