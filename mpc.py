@@ -32,6 +32,7 @@ class MPC:
         self.Tf_hzn = Tf_hzn
         self.dts_init = dts_init
         self.dynamics = state_dot
+        self.quad_params = quad_params
         self.state_ub = quad_params["state_ub"]
         self.state_lb = quad_params["state_lb"]
         self.integrator_type = integrator_type
@@ -167,15 +168,15 @@ class MPC:
         if self.integrator_type == 'euler':
             for k in range(self.N):
                 input = self.U[:,k]
-                sdot_k = self.dynamics(self.X[:,k], input)
+                sdot_k = self.dynamics(self.X[:,k], input, self.quad_params)
                 opti.subject_to(self.X[:,k+1] == self.X[:,k] + sdot_k * dts[k])
 
         elif self.integrator_type == 'RK4':
             for k in range(self.N):
-                k1 = self.dynamics(self.X[:,k], self.U[:,k])
-                k2 = self.dynamics(self.X[:,k] + dts[k] / 2 * k1, self.U[:,k])
-                k3 = self.dynamics(self.X[:,k] + dts[k] / 2 * k2, self.U[:,k])
-                k4 = self.dynamics(self.X[:,k] + dts[k] * k3, self.U[:,k])
+                k1 = self.dynamics(self.X[:,k], self.U[:,k], self.quad_params)
+                k2 = self.dynamics(self.X[:,k] + dts[k] / 2 * k1, self.U[:,k], self.quad_params)
+                k3 = self.dynamics(self.X[:,k] + dts[k] / 2 * k2, self.U[:,k], self.quad_params)
+                k4 = self.dynamics(self.X[:,k] + dts[k] * k3, self.U[:,k], self.quad_params)
                 x_next = self.X[:,k] + dts[k] / 6 * (k1 + 2*k2 + 2*k3 + k4)
                 opti.subject_to(self.X[:,k+1] == x_next)
 
@@ -240,9 +241,19 @@ if __name__ == "__main__":
     import numpy as np
     from tqdm import tqdm
     import matplotlib.pyplot as plt
+    
     import reference
+    import utils.pytorch as ptu
+    from dynamics import get_quad_params, state_dot
+    from utils.integrate import euler, RK4
+    from utils.quad import Animator
 
-    Ts = 0.01
+    ptu.init_dtype()
+    ptu.init_gpu()
+
+    quad_params = get_quad_params()
+
+    Ts = 0.1
     Tf_hzn = 3.0
     N = 30
     Ti = 0.0
@@ -258,33 +269,18 @@ if __name__ == "__main__":
     # reference = waypoint_reference('wp_p2p', average_vel=0.1, set_vel_zero=False)
     ref = reference.waypoint('wp_traj', average_vel=1.0, set_vel_zero=False)
 
-
     state = quad_params["default_init_state_np"]
-    quadCA = QuadcopterCA(params=quad_params)
-
-    quad = QuadcopterMJ(
-        state=state,
-        reference=ref,
-        params=quad_params,
-        Ts=Ts,
-        Ti=Ti,
-        Tf=Tf,
-        integrator=integrator,
-        xml_path="quadrotor_x.xml",
-        write_path="media/mujoco/",
-        render='matplotlib' # render='online_mujoco'
-    )
-
-    ctrl = MPC(N, Ts, Tf_hzn, dts_init, quadCA, integrator, obstacle_opts)
-
+    ctrl = MPC(N, Ts, Tf_hzn, dts_init, state_dot.casadi, quad_params, integrator, obstacle_opts)
     ctrl_pred_x = []
-    for t in tqdm(np.arange(Ti, Tf, Ts)):
+    memory = {'state': [state], 'cmd': [np.zeros(4)]}
+    true_times = np.arange(Ti, Tf, Ts)
+    for t in tqdm(true_times):
         # print(t)
         # for waypoint navigation stack the end reference point
-        
+
         # for wp_p2p
         # r = np.vstack([reference(quad.t)]*(N+1)).T
-        
+
         # for wp_traj (only constant dts)
         def compute_times(t_start, timesteps):
             times = [t_start]
@@ -294,29 +290,21 @@ if __name__ == "__main__":
 
         times = compute_times(t, dts_init)
         r = np.vstack([ref(time) for time in times]).T
-        cmd = ctrl(quad.state, r)
-        quad.step(cmd)
+        cmd = ctrl(state, r)
+        state = euler.time_invariant.numpy(state_dot.numpy, state, cmd, Ts, quad_params)
 
-        ctrl_predictions = ctrl.get_predictions() 
+        ctrl_predictions = ctrl.get_predictions()
         ctrl_pred_x.append(ctrl_predictions[0])
+
+        memory['state'].append(state)
+        memory['cmd'].append(cmd)
+
+    memory['state'] = np.vstack(memory['state'])
+    memory['cmd'] = np.vstack(memory['cmd'])
 
     ctrl_pred_x = np.stack(ctrl_pred_x)
 
-    # make sure that the number of frames rendered is never too large!
-    num_steps = int(Tf / Ts)
-    max_frames = 500
-    def compute_render_interval(num_steps, max_frames):
-        render_interval = 1  # Start with rendering every frame.
-        # While the number of frames using the current render interval exceeds max_frames, double the render interval.
-        while num_steps / render_interval > max_frames:
-            render_interval *= 2
-        return render_interval
-    render_interval = compute_render_interval(num_steps, max_frames)
-
-    quad.animate(
-        state_prediction=ctrl_pred_x, 
-        render_interval=render_interval
-    )
-    plt.show()
+    animator = Animator(memory['state'], true_times, memory['state'], max_frames=500, save_path='data', state_prediction=ctrl_pred_x, drawCylinder=False)
+    animator.animate()
 
     print('fin')

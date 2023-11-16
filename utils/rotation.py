@@ -45,7 +45,30 @@ class euler_to_quaternion:
     
     @staticmethod
     def numpy(euler_angles: np.ndarray):
-        raise NotImplementedError
+        # euler_angles is a tensor of shape (batch_size, 3)
+        # where each row is (roll, pitch, yaw)
+        rolls = euler_angles[0]
+        pitches = euler_angles[1]
+        yaws = euler_angles[2]
+
+        cys = np.cos(yaws * 0.5)
+        sys = np.sin(yaws * 0.5)
+        cps = np.cos(pitches * 0.5)
+        sps = np.sin(pitches * 0.5)
+        crs = np.cos(rolls * 0.5)
+        srs = np.sin(rolls * 0.5)
+
+        q0s = crs * cps * cys + srs * sps * sys
+        q1s = srs * cps * cys - crs * sps * sys
+        q2s = crs * sps * cys + srs * cps * sys
+        q3s = crs * cps * sys - srs * sps * cys
+
+        quaternions = np.stack((q0s, q1s, q2s, q3s))
+        # Normalize each quaternion
+        norms = np.linalg.norm(quaternions, ord=2)
+        quaternions_normalized = quaternions / norms
+        
+        return quaternions_normalized
 
 class quaternion_to_euler:
 

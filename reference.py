@@ -90,7 +90,7 @@ class waypoint:
 
         # quaternion conversion based on yaw. Pitch, roll desired to be 0
         # q0, q1, q2, q3 = utils.YPRToQuat_np(yaw, 0, 0)
-        q0, q1, q2, q3 = rotation.euler_to_quaternion.numpy(yaw, 0, 0)
+        q0, q1, q2, q3 = rotation.euler_to_quaternion.numpy(np.array([0, 0, yaw]))
 
         # desired angular velocities are all 0
         p, q, r = 0, 0, 0
@@ -138,7 +138,7 @@ class waypoint:
         # yaw = 2 # kill yaw at all times
 
         # quaternion conversion based on yaw. Pitch, roll desired to be 0
-        q0, q1, q2, q3 = rotation.euler_to_quaternion.numpy(yaw, 0, 0)
+        q0, q1, q2, q3 = rotation.euler_to_quaternion.numpy(0, 0, yaw)
 
         # The velocity and angular velocities are all 0
         xdot, ydot, zdot = 0, 0, 0
@@ -225,7 +225,7 @@ class equation:
         yaw = np.arctan2(ydot, xdot)
 
         # Quaternion conversion based on yaw. Pitch, roll desired to be 0
-        q0, q1, q2, q3 = rotation.euler_to_quaternion.numpy(yaw, 0, 0)
+        q0, q1, q2, q3 = rotation.euler_to_quaternion.numpy(np.array([0, 0, yaw]))
 
         # Angular velocities are all 0
         p, q, r = 0, 0, 0

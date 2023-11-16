@@ -19,12 +19,17 @@ def get_quad_params():
     params["dxm"]  = 0.16      # arm length (m)
     params["dym"]  = 0.16      # arm length (m)
     params["dzm"]  = 0.05      # motor height (m)
-    params["IB"]   = ptu.tensor(
+    params["IB_pt"]   = ptu.tensor(
                         [[0.0123, 0,      0     ],
                         [0,      0.0123, 0     ],
                         [0,      0,      0.0224]]
                     ) # Inertial tensor (kg*m^2)
-    params["invI"] = torch.linalg.inv(params["IB"])
+    params["IB"]   = np.array(
+                        [[0.0123, 0,      0     ],
+                        [0,      0.0123, 0     ],
+                        [0,      0,      0.0224]]
+                    ) # Inertial tensor (kg*m^2)
+    params["invI"] = torch.linalg.inv(params["IB_pt"])
     params["IRzz"] = 2.7e-5   # Rotor moment of inertia (kg*m^2)
 
     params["Cd"]         = 0.1
@@ -319,9 +324,9 @@ class state_dot:
         # Import params to numpy for CasADI
         # ---------------------------
         IB = params["IB"]
-        IBxx = ptu.to_numpy(IB[0, 0])
-        IByy = ptu.to_numpy(IB[1, 1])
-        IBzz = ptu.to_numpy(IB[2, 2])
+        IBxx = IB[0, 0]
+        IByy = IB[1, 1]
+        IBzz = IB[2, 2]
 
         # Unpack state tensor for readability
         # ---------------------------

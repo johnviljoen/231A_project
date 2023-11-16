@@ -135,14 +135,14 @@ class Animator:
         # Unpack States for readability
         # -----------------------------
 
-        self.x = states[:,0]
-        self.y = states[:,1]
-        self.z = -states[:,2]
+        self.x = self.states[:,0]
+        self.y = self.states[:,1]
+        self.z = -self.states[:,2]
 
-        self.q0 = states[:,3]
-        self.q1 = states[:,4]
-        self.q2 = states[:,5]
-        self.q3 = states[:,6]
+        self.q0 = self.states[:,3]
+        self.q1 = self.states[:,4]
+        self.q2 = self.states[:,5]
+        self.q3 = self.states[:,6]
 
         # Instantiate the figure with title, time, limits...
         # --------------------------------------------------
@@ -151,9 +151,9 @@ class Animator:
         self.ax = self.fig.add_subplot(projection='3d')
 
         # draw the lines between the waypoints
-        self.xDes = reference_history[:, 0]
-        self.yDes = reference_history[:, 1]
-        self.zDes = -reference_history[:, 2]
+        self.xDes = self.reference_history[:, 0]
+        self.yDes = self.reference_history[:, 1]
+        self.zDes = -self.reference_history[:, 2]
         self.ax.plot(self.xDes, self.yDes, self.zDes, ':', lw=1.3, color='green')
 
         # these are the lines that draw the quadcopter

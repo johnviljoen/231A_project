@@ -1,3 +1,4 @@
 casadi
 torch
 matplotlib
+tqdm

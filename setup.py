@@ -14,6 +14,7 @@ setup(name='231A_project',
         'casadi',
         'torch',
         'matplotlib',
+        'tqdm',
     ],
     packages=find_packages(
         include=[
