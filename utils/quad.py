@@ -20,8 +20,6 @@ from matplotlib import animation
 import utils.pytorch as ptu
 import utils.rotation as rotation
 
-
-
 class makeMixerFM:
 
     # Motor 1 is front left, then clockwise numbering.
@@ -41,6 +39,8 @@ class makeMixerFM:
                             [dym*kTh, -dym*kTh,  -dym*kTh, dym*kTh],
                             [dxm*kTh,  dxm*kTh, -dxm*kTh, -dxm*kTh],
                             [   -kTo,      kTo,     -kTo,      kTo]])
+    
+    
     
 class applyMixerFM:
 

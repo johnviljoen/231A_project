@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import casadi as ca
+import utils.pytorch as ptu
 
 class euler_to_quaternion:
 
@@ -288,6 +289,182 @@ class euler_to_rot_matrix:
 
         return R
 
+class rot_matrix_to_quaternion:
+
+    @staticmethod
+    def casadi_vectorized(R: ca.MX) -> ca.MX:
+        
+        R11 = R[0, 0]
+        R12 = R[0, 1]
+        R13 = R[0, 2]
+        R21 = R[1, 0]
+        R22 = R[1, 1]
+        R23 = R[1, 2]
+        R31 = R[2, 0]
+        R32 = R[2, 1]
+        R33 = R[2, 2]
+
+        tr = R11 + R22 + R33
+
+        # We will calculate the values for all the conditions and then use if_else to select the correct one
+        e0_cond1 = 0.5 * ca.sqrt(1 + tr)
+        r_cond1 = 0.25 / e0_cond1
+        e1_cond1 = (R32 - R23) * r_cond1
+        e2_cond1 = (R13 - R31) * r_cond1
+        e3_cond1 = (R21 - R12) * r_cond1
+
+        e1_cond2 = 0.5 * ca.sqrt(1 - tr + 2*R11)
+        r_cond2 = 0.25 / e1_cond2
+        e0_cond2 = (R32 - R23) * r_cond2
+        e2_cond2 = (R12 + R21) * r_cond2
+        e3_cond2 = (R13 + R31) * r_cond2
+
+        e2_cond3 = 0.5 * ca.sqrt(1 - tr + 2*R22)
+        r_cond3 = 0.25 / e2_cond3
+        e0_cond3 = (R13 - R31) * r_cond3
+        e1_cond3 = (R12 + R21) * r_cond3
+        e3_cond3 = (R23 + R32) * r_cond3
+
+        e3_cond4 = 0.5 * ca.sqrt(1 - tr + 2*R33)
+        r_cond4 = 0.25 / e3_cond4
+        e0_cond4 = (R21 - R12) * r_cond4
+        e1_cond4 = (R13 + R31) * r_cond4
+        e2_cond4 = (R23 + R32) * r_cond4
+
+        # Masking using if_else
+        # Define common conditions for reuse
+        condition_1 = ca.logic_and(ca.logic_and(tr > R11, tr > R22), tr > R33)
+        condition_2 = ca.logic_and(R11 > R22, R11 > R33)
+        condition_3 = R22 > R33
+
+        # Masking using if_else
+        e0 = ca.if_else(condition_1, e0_cond1, 
+            ca.if_else(condition_2, e0_cond2,
+            ca.if_else(condition_3, e0_cond3, e0_cond4)))
+
+        e1 = ca.if_else(condition_1, e1_cond1, 
+            ca.if_else(condition_2, e1_cond2,
+            ca.if_else(condition_3, e1_cond3, e1_cond4)))
+
+        e2 = ca.if_else(condition_1, e2_cond1, 
+            ca.if_else(condition_2, e2_cond2,
+            ca.if_else(condition_3, e2_cond3, e2_cond4)))
+
+        e3 = ca.if_else(condition_1, e3_cond1, 
+            ca.if_else(condition_2, e3_cond2,
+            ca.if_else(condition_3, e3_cond3, e3_cond4)))
+
+        # Concatenating the elements to create the quaternion
+        q = ca.horzcat(e0, e1, e2, e3)
+
+        # Making sure the scalar part of quaternion is non-negative
+        q = q * ca.sign(e0[0])
+
+        # Normalize the quaternion
+        magnitude = ca.sqrt(ca.sum1(q*q))
+        q_norm = q / magnitude
+
+        return q_norm
+
+    @staticmethod
+    def pytorch_vectorized(R: torch.Tensor) -> torch.Tensor:
+    
+        R11 = R[:, 0, 0]
+        R12 = R[:, 0, 1]
+        R13 = R[:, 0, 2]
+        R21 = R[:, 1, 0]
+        R22 = R[:, 1, 1]
+        R23 = R[:, 1, 2]
+        R31 = R[:, 2, 0]
+        R32 = R[:, 2, 1]
+        R33 = R[:, 2, 2]
+        # From page 68 of MotionGenesis book
+        tr = R11 + R22 + R33
+
+        e0 = ptu.zeros(tr.shape)
+        e1 = ptu.zeros(tr.shape)
+        e2 = ptu.zeros(tr.shape)
+        e3 = ptu.zeros(tr.shape)
+
+        # mask1 = (tr > R11) & (tr > R22) & (tr > R33)
+        # mask2 = (R11 > R22) & (R11 > R33)
+        # mask3 = R22 > R33
+        # mask4 = ~mask1 & ~mask2 & ~mask3  # This is equivalent to else
+
+        mask1 = (tr > R11) & (tr > R22) & (tr > R33)
+        mask2 = (R11 > R22) & (R11 > R33) & ~mask1
+        mask3 = (R22 > R33) & ~mask1 & ~mask2
+        mask4 = ~mask1 & ~mask2 & ~mask3
+        
+        # Condition 1
+        e0[mask1] = 0.5 * torch.sqrt(1 + tr[mask1])
+        r = 0.25 / e0[mask1]
+        e1[mask1] = (R32[mask1] - R23[mask1]) * r
+        e2[mask1] = (R13[mask1] - R31[mask1]) * r
+        e3[mask1] = (R21[mask1] - R12[mask1]) * r
+
+        # Condition 2
+        e1[mask2] = 0.5 * torch.sqrt(1 - tr[mask2] + 2*R11[mask2])
+        r = 0.25 / e1[mask2]
+        e0[mask2] = (R32[mask2] - R23[mask2]) * r
+        e2[mask2] = (R12[mask2] + R21[mask2]) * r
+        e3[mask2] = (R13[mask2] + R31[mask2]) * r
+
+        # Condition 3
+        e2[mask3] = 0.5 * torch.sqrt(1 - tr[mask3] + 2*R22[mask3])
+        r = 0.25 / e2[mask3]
+        e0[mask3] = (R13[mask3] - R31[mask3]) * r
+        e1[mask3] = (R12[mask3] + R21[mask3]) * r
+        e3[mask3] = (R23[mask3] + R32[mask3]) * r
+
+        # Condition 4 (else)
+        e3[mask4] = 0.5 * torch.sqrt(1 - tr[mask4] + 2*R33[mask4])
+        r = 0.25 / e3[mask4]
+        e0[mask4] = (R21[mask4] - R12[mask4]) * r
+        e1[mask4] = (R13[mask4] + R31[mask4]) * r
+        e2[mask4] = (R23[mask4] + R32[mask4]) * r
+
+        q = torch.stack([e0, e1, e2, e3], dim=1)
+        q_sign = q * torch.sign(q[:, 0]).unsqueeze(1)  # unsqueeze to make it [100, 1] for broadcasting
+        magnitude = torch.sqrt(torch.sum(q_sign**2, dim=1)).unsqueeze(1)
+        q_norm = q_sign / magnitude
+
+        # if tr > R11 and tr > R22 and tr > R33:
+        #     e0 = 0.5 * torch.sqrt(1 + tr)
+        #     r = 0.25 / e0
+        #     e1 = (R32 - R23) * r
+        #     e2 = (R13 - R31) * r
+        #     e3 = (R21 - R12) * r
+        # elif R11 > R22 and R11 > R33:
+        #     e1 = 0.5 * torch.sqrt(1 - tr + 2*R11)
+        #     r = 0.25 / e1
+        #     e0 = (R32 - R23) * r
+        #     e2 = (R12 + R21) * r
+        #     e3 = (R13 + R31) * r
+        # elif R22 > R33:
+        #     e2 = 0.5 * torch.sqrt(1 - tr + 2*R22)
+        #     r = 0.25 / e2
+        #     e0 = (R13 - R31) * r
+        #     e1 = (R12 + R21) * r
+        #     e3 = (R23 + R32) * r
+        # else:
+        #     e3 = 0.5 * torch.sqrt(1 - tr + 2*R33)
+        #     r = 0.25 / e3
+        #     e0 = (R21 - R12) * r
+        #     e1 = (R13 + R31) * r
+        #     e2 = (R23 + R32) * r
+
+        # e0,e1,e2,e3 = qw,qx,qy,qz
+        # q = torch.stack([e0,e1,e2,e3])
+        # q = q*torch.sign(e0)
+        
+        # q = q/torch.sqrt(torch.sum(q[0]**2 + q[1]**2 + q[2]**2 + q[3]**2))
+
+        if q.isnan().any():
+            print('fin')
+        
+        return q_norm
+
 class quaternion_derivative:
     # Functions to calculate the quaternion derivative given quaternion and angular velocity
 
@@ -353,6 +530,55 @@ class quaternion_multiply:
             w1*y2 - x1*z2 + y1*w2 + z1*x2,
             w1*z2 + x1*y2 - y1*x2 + z1*w2
         )
+    
+    @staticmethod
+    def casadi_vectorized(q, p: ca.MX) -> ca.MX:
+
+        row0 = ca.horzcat(q[:,0], -q[:,1], -q[:,2], -q[:,3])
+        row1 = ca.horzcat(q[:,1],  q[:,0], -q[:,3],  q[:,2])
+        row2 = ca.horzcat(q[:,2],  q[:,3],  q[:,0], -q[:,1])
+        row3 = ca.horzcat(q[:,3], -q[:,2],  q[:,1],  q[:,0])
+
+        Q = ca.vertcat(row0, row1, row2, row3)
+
+        # In CasADi, we perform matrix multiplication using mtimes
+        mult = ca.mtimes(Q, p.T).T
+
+        return mult
+    
+    @staticmethod
+    def pytorch(q, p: torch.Tensor) -> torch.Tensor:
+
+        row0 = torch.stack([q[0], -q[1], -q[2], -q[3]])
+        row1 = torch.stack([q[1],  q[0], -q[3],  q[2]])
+        row2 = torch.stack([q[2],  q[3],  q[0], -q[1]])
+        row3 = torch.stack([q[3], -q[2],  q[1],  q[0]])
+
+        Q = torch.vstack([row0,row1,row2,row3])
+
+        # Q = np.array([[q[0], -q[1], -q[2], -q[3]],
+        #               [q[1],  q[0], -q[3],  q[2]],
+        #               [q[2],  q[3],  q[0], -q[1]],
+        #               [q[3], -q[2],  q[1],  q[0]]])
+
+        return Q@p
+
+    @staticmethod
+    def pytorch_vectorized(q, p: torch.Tensor) -> torch.Tensor:
+
+        row0 = torch.stack([q[:,0], -q[:,1], -q[:,2], -q[:,3]], dim=1)
+        row1 = torch.stack([q[:,1],  q[:,0], -q[:,3],  q[:,2]], dim=1)
+        row2 = torch.stack([q[:,2],  q[:,3],  q[:,0], -q[:,1]], dim=1)
+        row3 = torch.stack([q[:,3], -q[:,2],  q[:,1],  q[:,0]], dim=1)
+
+        Q = torch.stack([row0,row1,row2,row3], dim=1)
+
+        # Q = np.array([[q[0], -q[1], -q[2], -q[3]],
+        #               [q[1],  q[0], -q[3],  q[2]],
+        #               [q[2],  q[3],  q[0], -q[1]],
+        #               [q[3], -q[2],  q[1],  q[0]]])
+        mult = torch.bmm(Q, p.unsqueeze(-1)).squeeze(-1)
+        return mult
 
 class quaternion_error:
 
@@ -379,7 +605,71 @@ class quaternion_to_dcm:
         dcm[2,2] = q[0]**2 - q[1]**2 - q[2]**2 + q[3]**2
 
         return dcm
+    
+    @staticmethod
+    def pytorch_vectorized(q: torch.Tensor) -> torch.Tensor:
 
+        # expects q first dimension to be batch
+        bs = q.shape[0]
+
+        dcm = ptu.zeros([bs,3,3])
+
+        dcm[:,0,0] = q[:,0]**2 + q[:,1]**2 - q[:,2]**2 - q[:,3]**2
+        dcm[:,0,1] = 2.0*(q[:,1]*q[:,2] - q[:,0]*q[:,3])
+        dcm[:,0,2] = 2.0*(q[:,1]*q[:,3] + q[:,0]*q[:,2])
+        dcm[:,1,0] = 2.0*(q[:,1]*q[:,2] + q[:,0]*q[:,3])
+        dcm[:,1,1] = q[:,0]**2 - q[:,1]**2 + q[:,2]**2 - q[:,3]**2
+        dcm[:,1,2] = 2.0*(q[:,2]*q[:,3] - q[:,0]*q[:,1])
+        dcm[:,2,0] = 2.0*(q[:,1]*q[:,3] - q[:,0]*q[:,2])
+        dcm[:,2,1] = 2.0*(q[:,2]*q[:,3] + q[:,0]*q[:,1])
+        dcm[:,2,2] = q[:,0]**2 - q[:,1]**2 - q[:,2]**2 + q[:,3]**2
+
+        return dcm
+
+class quaternion_inverse:
+
+    @staticmethod
+    def pytorch(q: torch.Tensor) -> torch.Tensor:
+        qinv = torch.stack([q[0], -q[1], -q[2], -q[3]])/torch.linalg.norm(q)
+        return qinv
+    
+    @staticmethod
+    def pytorch_vectorized(q: torch.Tensor) -> torch.Tensor:
+        qinv = torch.stack([q[:,0], -q[:,1], -q[:,2], -q[:,3]])/torch.linalg.norm(q, axis=1)
+        return qinv.T
+
+    # def inverse_batched_ca(q: ca.MX) -> ca.MX:
+    #     qnorm = ca.sqrt(ca.mtimes(q, q.T).diagonal())
+    #     qinv = ca.horzcat([q[:,0], -q[:,1], -q[:,2], -q[:,3]]) / ca.mtimes(qnorm, ca.MX.ones(1,4))
+    #     return qinv
+
+    @staticmethod
+    def casadi_vectorized(q: ca.MX) -> ca.MX:
+        # Compute the squared norm of each quaternion (each row)
+        qnorm2 = ca.mtimes(q, q.T)
+
+        # Take the square root to get the norm
+        qnorm = ca.sqrt(qnorm2)
+
+        # Compute the inverse for each quaternion
+        qinv = ca.MX.zeros(q.size1(), q.size2())
+        qinv[:, 0] = q[:, 0] / qnorm
+        qinv[:, 1] = -q[:, 1] / qnorm
+        qinv[:, 2] = -q[:, 2] / qnorm
+        qinv[:, 3] = -q[:, 3] / qnorm
+
+        return qinv
+
+class normalize_vector:
+
+    @staticmethod
+    def pytorch(q: torch.Tensor) -> torch.Tensor:
+        return q/torch.linalg.norm(q)
+
+    @staticmethod
+    def pytorch_vectorized(q: torch.Tensor, norm_dim=1) -> torch.Tensor:
+        normalised_vecs = torch.linalg.norm(q, dim=norm_dim).unsqueeze(1)
+        return q/normalised_vecs
 
 if __name__ == "__main__":
     

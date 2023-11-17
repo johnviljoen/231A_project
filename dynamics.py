@@ -1132,6 +1132,10 @@ class mujoco_quad:
         # mujoco operates on numpy arrays not tensors
         self.state = copy.deepcopy(state)
 
+    def __call__(self, state, cmd):
+        # designed for 1-D use with Neuromancer
+        return ptu.from_numpy(self.step(ptu.to_numpy(cmd.squeeze(0)))).unsqueeze(0)
+
     def step(
             self, 
             cmd: np.ndarray,

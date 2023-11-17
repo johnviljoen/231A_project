@@ -4,7 +4,6 @@ The MPC_Base class contains all the common parts of the CasADI MPC for the 3 con
 1. reference point tracking (MPC_Point_Ref)
 2. reference trajectory tracking (MPC_Traj_Ref)
 3. reference point tracking with obstacle constraints (MPC_Point_Ref_Obstacle)
-
 """
 
 import casadi as ca

@@ -7,8 +7,11 @@ from neuromancer.dynamics import ode, integrators
 
 import utils.pytorch as ptu
 import utils.callback
+import reference
+from utils.quad import Animator
 
-
+from dynamics import mujoco_quad, get_quad_params
+from pid import PID, get_ctrl_params
 
 class DatasetGenerator:
     def __init__(
@@ -872,7 +875,257 @@ def train_fig8(    # recommendations:
             policy_state_dict[new_key] = value
     torch.save(policy_state_dict, policy_save_path + f"fig8_policy.pth")
 
+def run_wp_p2p(
+        Ti, Tf, Ts,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+    ):
 
+    times = np.arange(Ti, Tf, Ts)
+    nstep = len(times)
+    quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
+
+    node_list = []
+
+    def process_policy_input(x, r, c, radius=0.5):
+        idx = [0,7,1,8,2,9]
+        x_r, r_r = x[:, idx], r[:, idx]
+        x_r = torch.clip(x_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        r_r = torch.clip(r_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        c_pos, c_vel = posVel2cyl(x_r, c, radius)
+        return torch.hstack([r_r - x_r, c_pos, c_vel])
+    process_policy_input_node = nm.system.Node(process_policy_input, ['X', 'R', 'Cyl'], ['Obs'], name='state_selector')
+    node_list.append(process_policy_input_node)
+
+    mlp = nm.modules.blocks.MLP(6 + 2, 3, bias=True,
+                    linear_map=torch.nn.Linear,
+                    nonlin=torch.nn.ReLU,
+                    hsizes=[20, 20, 20, 20]).to(ptu.device)
+    policy_node = nm.system.Node(mlp, ['Obs'], ['MLP_U'], name='mlp')
+    node_list.append(policy_node)
+
+    gravity_offset = lambda u: u + ptu.tensor([[0,0,-quad_params["hover_thr"]]])
+    gravity_offset_node = nm.system.Node(gravity_offset, ['MLP_U'], ['MLP_U_grav'], name='gravity_offset')
+    node_list.append(gravity_offset_node)
+
+    pid = PID(Ts=Ts, bs=1, ctrl_params=ctrl_params, quad_params=quad_params)
+    pid_node = nm.system.Node(pid, ['X', 'MLP_U_grav'], ['U'], name='pid_control')
+    node_list.append(pid_node)
+
+    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    sys_node = nm.system.Node(sys, input_keys=['X', 'U'], output_keys=['X'], name='dynamics')
+    node_list.append(sys_node)
+
+    cl_system = nm.system.System(node_list, nsteps=nstep)
+
+    # the reference about which we generate data
+    R = reference.waypoint('wp_p2p', average_vel=1.0)
+
+    X = ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32))
+    data = {
+        'X': X,
+        'R': torch.concatenate([ptu.from_numpy(R(1)[None,:][None,:].astype(np.float32))]*nstep, axis=1),
+        'Cyl': torch.concatenate([ptu.tensor([[[1,1]]])]*nstep, axis=1),
+    }
+
+    # load the pretrained policy
+    mlp_state_dict = torch.load(policy_save_path + 'wp_p2p_policy.pth')
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    # set the mujoco simulation to the correct initial conditions
+    cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+
+    # Perform CLP Simulation
+    output = cl_system.inference(data)
+
+    # save
+    print("saving the state and input histories...")
+    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
+    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
+
+    np.savez(
+        file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+        x_history = x_history,
+        u_history = u_history,
+        r_history = r_history
+    )
+
+    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=True)
+    animator.animate()
+
+def run_wp_traj(
+        Ti, Tf, Ts,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nstep = len(times)
+    quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
+
+    node_list = []
+
+    def process_policy_input(x, r):
+        idx = [0,7,1,8,2,9]
+        x_r, r_r = x[:, idx], r[:, idx]
+        x_r = torch.clip(x_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        r_r = torch.clip(r_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        return r_r - x_r
+    process_policy_input_node = nm.system.Node(process_policy_input, ['X', 'R'], ['Obs'], name='state_selector')
+    node_list.append(process_policy_input_node)
+
+    mlp = nm.modules.blocks.MLP(6, 3, bias=True,
+                    linear_map=torch.nn.Linear,
+                    nonlin=torch.nn.ReLU,
+                    hsizes=[20, 20, 20, 20]).to(ptu.device)
+    policy_node = nm.system.Node(mlp, ['Obs'], ['MLP_U'], name='mlp')
+    node_list.append(policy_node)
+
+    gravity_offset = lambda u: u + ptu.tensor([[0,0,-quad_params["hover_thr"]]])
+    gravity_offset_node = nm.system.Node(gravity_offset, ['MLP_U'], ['MLP_U_grav'], name='gravity_offset')
+    node_list.append(gravity_offset_node)
+
+    pid = PID(Ts=Ts, bs=1, ctrl_params=ctrl_params, quad_params=quad_params)
+    pid_node = nm.system.Node(pid, ['X', 'MLP_U_grav'], ['U'], name='pid_control')
+    node_list.append(pid_node)
+
+    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    sys_node = nm.system.Node(sys, input_keys=['X', 'U'], output_keys=['X'], name='dynamics')
+    node_list.append(sys_node)
+
+    cl_system = nm.system.System(node_list, nsteps=nstep)
+
+    # the reference about which we generate data
+    R = reference.waypoint('wp_traj', average_vel=1.0)
+
+    # Generate time points using linspace.
+    time_points = torch.linspace(0, Ts * nstep, nstep)
+
+    # Get the references for each time point.
+    ref_sequence = [ptu.from_numpy(R(t.item())[None,:][None,:].astype(np.float32)) for t in time_points]
+
+    # Stack the references on top of each other.
+    ref_tensor = torch.cat(ref_sequence, axis=1)
+
+    data = {
+        'X': ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32)),
+        'R': ref_tensor,
+    }
+
+    # load the pretrained policy
+    mlp_state_dict = torch.load(policy_save_path + 'wp_traj_policy.pth')
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    # set the mujoco simulation to the correct initial conditions
+    cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
+
+    # Perform CLP Simulation
+    output = cl_system.inference(data)
+
+    # save
+    print("saving the state and input histories...")
+    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
+    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
+
+    np.savez(
+        file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+        x_history = x_history,
+        u_history = u_history,
+        r_history = r_history
+    )
+
+    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False)
+    animator.animate()
+
+def run_fig8(
+        Ti, Tf, Ts,
+        integrator = 'euler',
+        policy_save_path = 'data/',
+        media_save_path = 'data/training/',
+    ):
+
+    times = np.arange(Ti, Tf, Ts)
+    nstep = len(times)
+    quad_params = get_quad_params()
+    ctrl_params = get_ctrl_params()
+
+    node_list = []
+
+    def process_policy_input(x, r, p):
+        idx = [0,7,1,8,2,9]
+        x_r, r_r = x[:, idx], r[:, idx]
+        x_r = torch.clip(x_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        r_r = torch.clip(r_r, min=ptu.tensor(-3.), max=ptu.tensor(3.))
+        return torch.hstack([r_r - x_r, p])
+    process_policy_input_node = nm.system.Node(process_policy_input, ['X', 'R', 'P'], ['Obs'], name='state_selector')
+    node_list.append(process_policy_input_node)
+    
+    mlp = nm.modules.blocks.MLP(6 + 4, 3, bias=True,
+                    linear_map=torch.nn.Linear,
+                    nonlin=torch.nn.ReLU,
+                    hsizes=[20, 20, 20, 20]).to(ptu.device)
+    policy_node = nm.system.Node(mlp, ['Obs'], ['MLP_U'], name='mlp')
+    node_list.append(policy_node)
+
+    gravity_offset = lambda u: u + ptu.tensor([[0,0,-quad_params["hover_thr"]]])
+    gravity_offset_node = nm.system.Node(gravity_offset, ['MLP_U'], ['MLP_U_grav'], name='gravity_offset')
+    node_list.append(gravity_offset_node)
+
+    pid = PID(Ts=Ts, bs=1, ctrl_params=ctrl_params, quad_params=quad_params)
+    pid_node = nm.system.Node(pid, ['X', 'MLP_U_grav'], ['U'], name='pid_control')
+    node_list.append(pid_node)
+
+    sys = mujoco_quad(state=quad_params["default_init_state_np"], quad_params=quad_params, Ti=Ti, Tf=Tf, Ts=Ts, integrator=integrator)
+    sys_node = nm.system.Node(sys, input_keys=['X', 'U'], output_keys=['X'], name='dynamics')
+    node_list.append(sys_node)
+
+    cl_system = nm.system.System(node_list, nsteps=nstep)
+
+    R = reference.equation(type='fig8', average_vel=1.0, Ts=Ts)
+
+    # Generate time points using linspace.
+    time_points = torch.linspace(0, Ts * nstep, nstep)
+
+    # Get the references for each time point.
+    ref_sequence = [ptu.from_numpy(R(t.item())[None,:][None,:].astype(np.float32)) for t in time_points]
+
+    # Stack the references on top of each other.
+    ref_tensor = torch.cat(ref_sequence, axis=1)
+
+    P = torch.concat([torch.tensor([[[4,4,4,-5]]])] * (nstep + 1), dim=1)
+    data = {
+        'X': ptu.from_numpy(quad_params["default_init_state_np"][None,:][None,:].astype(np.float32)),
+        'R': ref_tensor,
+        'P': P
+    }
+
+    # load the data for the policy
+    mlp_state_dict = torch.load(policy_save_path + "fig8_policy.pth")
+    cl_system.nodes[1].load_state_dict(mlp_state_dict)
+
+    output = cl_system.inference(data)
+
+    # save
+    print("saving the state and input histories...")
+    x_history = np.stack(ptu.to_numpy(output['X'].squeeze()))
+    u_history = np.stack(ptu.to_numpy(output['U'].squeeze()))
+    r_history = np.stack(ptu.to_numpy(output['R'].squeeze()))
+
+    np.savez(
+        file = f"data/xu_fig8_mj_{str(Ts)}.npz",
+        x_history = x_history,
+        u_history = u_history,
+        r_history = r_history
+    )
+
+    animator = Animator(x_history, times, r_history, max_frames=500, save_path=media_save_path, state_prediction=None, drawCylinder=False, reference_type='fig8')
+    animator.animate()
 
 if __name__ == "__main__":
 
@@ -886,6 +1139,12 @@ if __name__ == "__main__":
     ptu.init_gpu(use_gpu=False)
 
     import time
+    # needs a .detach() in the system.forward method indata to not consume all of your RAM
+    # this cannot be on when training though, just for inference, running - nvm i made a new method to solve this
+    run_wp_p2p(0, 3.5, 0.001)
+    run_wp_traj(0, 20.0, 0.001)
+    run_fig8(0.0, 10.0, 0.001)
+
     train_fig8(iterations=1, epochs=5, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
     train_wp_traj(iterations=1, epochs=10, batch_size=5000, minibatch_size=10, nstep=100, lr=0.05, Ts=0.1)
     start_time = time.time()

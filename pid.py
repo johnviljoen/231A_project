@@ -6,6 +6,8 @@ COMPLETE - asides from the velocity saturation
 
 import torch
 import utils.pytorch as ptu
+import utils.rotation
+import utils.quad
 
 rad2deg = 180.0/torch.pi
 deg2rad = torch.pi/180.0
@@ -121,7 +123,7 @@ class PID(torch.nn.Module):
             quad_params,
             include_actuators=True,
             verbose=False,
-            input="xyz_vel", # 'xyz_vel', 'xyz_thr'
+            input="xyz_thr", # 'xyz_vel', 'xyz_thr'
         ) -> None:
         super().__init__()
 
@@ -136,7 +138,7 @@ class PID(torch.nn.Module):
         self.input = input
 
         # the internal states of the integral components:
-        self.thr_int = ptu.create_zeros([bs,3])
+        self.thr_int = ptu.zeros([bs,3])
 
         # STUFF I KIND OF AGREE WITH BUT COULD BE FIXED (TODO s:)
         # -------------------------------------------------------
@@ -144,8 +146,8 @@ class PID(torch.nn.Module):
         # we currently calculate the statedot by just taking the delta between timesteps
         # this becomes inaccurate at slower timesteps, and so is a candidate to be upgraded
         # with the true dynamics in the future
-        self.vel_old = ptu.create_zeros([bs, 3])
-        self.omega_old = ptu.create_zeros([bs, 3])
+        self.vel_old = ptu.zeros([bs, 3])
+        self.omega_old = ptu.zeros([bs, 3])
 
     def __call__(self, x, sp):
 
@@ -153,10 +155,10 @@ class PID(torch.nn.Module):
         vel = x[:,7:10]
         omega = x[:,10:13]
 
-        eul_sp = ptu.create_zeros(vel.shape)
-        acc_sp = ptu.create_zeros(vel.shape)
+        eul_sp = ptu.zeros(vel.shape)
+        acc_sp = ptu.zeros(vel.shape)
 
-        dcm = utils.quat2Dcm_batched(quat)
+        dcm = utils.rotation.quaternion_to_dcm.pytorch_vectorized(quat)
 
         # should be replaceable by the known dynamics of the system TODO
         vel_dot = vel - self.vel_old
@@ -186,7 +188,7 @@ class PID(torch.nn.Module):
         rateCtrl = self.rate_control(omega=omega, omega_dot=omega_dot, rate_sp=rate_sp)
 
         # find the w commands to generate the desired rotational rate and thrusts
-        w_cmd = utils.mixerFM_batched(self.quad_params, torch.linalg.norm(thrust_sp, dim=1), rateCtrl)
+        w_cmd = utils.quad.applyMixerFM.pytorch_vectorized(self.quad_params, torch.linalg.norm(thrust_sp, dim=1), rateCtrl)
 
         if self.verbose:
             print(f"rate_sp: {rate_sp[0,:]}")
@@ -240,14 +242,14 @@ class PID(torch.nn.Module):
         yaw_sp = eul_sp[:,2]
 
         # Desired body_z axis direction
-        body_z = -utils.vectNormalize_batched(thrust_sp)
+        body_z = -utils.rotation.normalize_vector.pytorch_vectorized(thrust_sp)
         
         # Vector of desired Yaw direction in XY plane, rotated by pi/2 (fake body_y axis)
-        y_C = torch.vstack([-torch.sin(yaw_sp), torch.cos(yaw_sp), ptu.create_zeros(self.bs)]).T
+        y_C = torch.vstack([-torch.sin(yaw_sp), torch.cos(yaw_sp), ptu.zeros(self.bs)]).T
         
         # Desired body_x axis direction
         body_x = torch.cross(y_C, body_z)
-        body_x = utils.vectNormalize_batched(body_x)
+        body_x = utils.rotation.normalize_vector.pytorch_vectorized(body_x)
         
         # Desired body_y axis direction
         body_y = torch.cross(body_z, body_x)
@@ -257,7 +259,7 @@ class PID(torch.nn.Module):
         # R_sp = torch.vstack([body_x, body_y, body_z]).T
 
         # Full desired quaternion (full because it considers the desired Yaw angle)
-        qd_full = utils.RotToQuat_batched(R_sp)
+        qd_full = utils.rotation.rot_matrix_to_quaternion.pytorch_vectorized(R_sp)
 
         if qd_full.isnan().any():
             print('fin')
@@ -407,21 +409,21 @@ class PID(torch.nn.Module):
 
         # Current thrust orientation e_z and desired thrust orientation e_z_d
         e_z = dcm[:,:,2]
-        e_z_d = -utils.vectNormalize_batched(thrust_sp)
+        e_z_d = -utils.rotation.normalize_vector.pytorch_vectorized(thrust_sp)
 
         # Quaternion error between the 2 vectors - TODO get torch.dot to work properly with batched
-        qe_red = ptu.create_zeros(quat.shape)
+        qe_red = ptu.zeros(quat.shape)
         qe_red[:,0] = torch.sum(e_z * e_z_d, dim=1) + torch.sqrt(torch.linalg.norm(e_z, dim=1)**2 * torch.linalg.norm(e_z_d, dim=1)**2)
 
         # qe_red[0] = torch.dot(e_z, e_z_d) + torch.sqrt(torch.linalg.norm(e_z, dim=1)**2 * torch.linalg.norm(e_z_d, dim=1)**2)
         qe_red[:,1:4] = torch.cross(e_z, e_z_d)
-        qe_red = utils.vectNormalize_batched(qe_red)
+        qe_red = utils.rotation.normalize_vector.pytorch_vectorized(qe_red)
         
         # Reduced desired quaternion (reduced because it doesn't consider the desired Yaw angle)
-        qd_red = utils.quatMultiply_batched(qe_red, quat)
+        qd_red = utils.rotation.quaternion_multiply.pytorch_vectorized(qe_red, quat)
 
         # Mixed desired quaternion (between reduced and full) and resulting desired quaternion qd
-        q_mix = utils.quatMultiply_batched(utils.inverse_batched(qd_red), qd_full)
+        q_mix = utils.rotation.quaternion_multiply.pytorch_vectorized(utils.rotation.quaternion_inverse.pytorch_vectorized(qd_red), qd_full)
         q_mix = q_mix*torch.sign(q_mix[:,0:1])
         # q_mix[:,0] = torch.clip(q_mix[:,0], -1.0, 1.0)
         # q_mix[:,3] = torch.clip(q_mix[:,3], -1.0, 1.0)
@@ -432,22 +434,22 @@ class PID(torch.nn.Module):
         # q0ac = torch.arccos(q_mix[:,0])
         q0 = torch.clip(q_mix[:,0], -1.0, 1.0)
         # q0 = torch.cos(self.ctrl_params["yaw_w"]*q0ac)
-        q1 = ptu.create_zeros(self.bs)
-        q2 = ptu.create_zeros(self.bs)
+        q1 = ptu.zeros(self.bs)
+        q2 = ptu.zeros(self.bs)
         # q3 = torch.sin(self.ctrl_params["yaw_w"]*torch.arcsin(q_mix[:,3]))
         q3 = torch.clip(q_mix[:,3], -1.0, 1.0)
         multiplier = torch.vstack([q0, q1, q2, q3]).T
 
-        qd = utils.quatMultiply_batched(qd_red, multiplier)
+        qd = utils.rotation.quaternion_multiply.pytorch_vectorized(qd_red, multiplier)
 
         # Resulting error quaternion
-        qe = utils.quatMultiply_batched(utils.inverse_batched(quat), qd)
+        qe = utils.rotation.quaternion_multiply.pytorch_vectorized(utils.rotation.quaternion_inverse.pytorch_vectorized(quat), qd)
 
         # Create rate setpoint from quaternion error
         rate_sp = (2.0*torch.sign(qe[:,0:1])*qe[:,1:4])*self.ctrl_params["att_P_gain"]
         
         # Add Yaw rate feed-forward term clipped by rate limits calculated by yaw rate weighting in ctrl_params
-        rate_sp += utils.quat2Dcm_batched(utils.inverse_batched(quat))[:,:,2]*self.ctrl_params["yawFF"]
+        rate_sp += utils.rotation.quaternion_to_dcm.pytorch_vectorized(utils.rotation.quaternion_inverse.pytorch_vectorized(quat))[:,:,2]*self.ctrl_params["yawFF"]
 
         # Limit rate setpoint
         rate_sp = torch.clip(rate_sp, -self.ctrl_params["rateMax"], self.ctrl_params["rateMax"])
