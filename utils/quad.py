@@ -40,8 +40,6 @@ class makeMixerFM:
                             [dxm*kTh,  dxm*kTh, -dxm*kTh, -dxm*kTh],
                             [   -kTo,      kTo,     -kTo,      kTo]])
     
-    
-    
 class applyMixerFM:
 
     @staticmethod

@@ -452,7 +452,7 @@ def train_wp_p2p(    # recommendations:
     node_list.append(policy_node)
 
     dynamics = Dynamics(insize=9, outsize=6)
-    integrator = nm.dynamics.integrators.Euler(dynamics, h=torch.tensor(Ts))
+    integrator = integrators.Euler(dynamics, h=torch.tensor(Ts))
     dynamics_node = nm.system.Node(integrator, ['X', 'U'], ['X'], name='dynamics')
     node_list.append(dynamics_node)
 
@@ -938,7 +938,7 @@ def run_wp_p2p(
     cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
 
     # Perform CLP Simulation
-    output = cl_system.inference(data)
+    output = cl_system.forward(data, retain_grad=False)
 
     # save
     print("saving the state and input histories...")
@@ -1025,7 +1025,7 @@ def run_wp_traj(
     cl_system.nodes[4].callable.set_state(ptu.to_numpy(data['X'].squeeze().squeeze()))
 
     # Perform CLP Simulation
-    output = cl_system.inference(data)
+    output = cl_system.forward(data, retain_grad=False)
 
     # save
     print("saving the state and input histories...")
@@ -1109,7 +1109,7 @@ def run_fig8(
     mlp_state_dict = torch.load(policy_save_path + "fig8_policy.pth")
     cl_system.nodes[1].load_state_dict(mlp_state_dict)
 
-    output = cl_system.inference(data)
+    output = cl_system.forward(data, retain_grad=False)
 
     # save
     print("saving the state and input histories...")
