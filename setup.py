@@ -16,7 +16,6 @@ setup(name='231A_project',
     install_requires=[
         'casadi',
         'matplotlib',
-        'mujoco',       # for the uncertain black-box simulation, not really necessary
         'tqdm',         # just for pretty loops in a couple places
     ],
     packages=find_packages(

@@ -242,13 +242,8 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     
     import reference
-    import utils.pytorch as ptu
     from dynamics import get_quad_params, state_dot
-    from utils.integrate import euler, RK4
     from utils.quad import Animator
-
-    ptu.init_dtype()
-    ptu.init_gpu()
 
     quad_params = get_quad_params()
 
@@ -290,12 +285,12 @@ if __name__ == "__main__":
         times = compute_times(t, dts_init)
         r = np.vstack([ref(time) for time in times]).T
         cmd = ctrl(state, r)
-        state = euler.time_invariant.numpy(state_dot.numpy, state, cmd, Ts, quad_params)
+        state += state_dot.numpy(state, cmd, quad_params) * Ts
 
         ctrl_predictions = ctrl.get_predictions()
         ctrl_pred_x.append(ctrl_predictions[0])
 
-        memory['state'].append(state)
+        memory['state'].append(np.copy(state))
         memory['cmd'].append(cmd)
 
     memory['state'] = np.vstack(memory['state'])
