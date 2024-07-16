@@ -15,11 +15,9 @@ setup(name='231A_project',
     author_email='johnviljoen2@gmail.com',
     install_requires=[
         'casadi',
-        'neuromancer',
         'matplotlib',
         'mujoco',       # for the uncertain black-box simulation, not really necessary
         'tqdm',         # just for pretty loops in a couple places
-        'imageio',      # just for DPC callback animations
     ],
     packages=find_packages(
         include=[
