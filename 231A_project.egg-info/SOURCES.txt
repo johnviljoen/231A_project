@@ -1,6 +1,0 @@
-setup.py
-231A_project.egg-info/PKG-INFO
-231A_project.egg-info/SOURCES.txt
-231A_project.egg-info/dependency_links.txt
-231A_project.egg-info/requires.txt
-231A_project.egg-info/top_level.txt
